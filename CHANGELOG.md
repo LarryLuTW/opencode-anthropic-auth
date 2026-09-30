@@ -1,5 +1,11 @@
 # @op1/opencode-anthropic-auth
 
+## 2.0.5
+
+### Patch Changes
+
+- Add the Claude identity to compaction, generate, and title requests as well as agent-loop requests. Without it, Anthropic rejected every OAuth compaction with HTTP 429, so sessions could not compact.
+
 ## 2.0.4
 
 ### Patch Changes

@@ -72,7 +72,10 @@ export const AnthropicAuthPlugin = Plugin.define({
         })
       })
 
-      yield* ctx.session.hook('context', (event) =>
+      const addClaudeIdentity = (event: {
+        readonly model: { readonly providerID: string }
+        system: Array<{ type: string; text?: string }>
+      }) =>
         Effect.gen(function* () {
           if (event.model.providerID !== integrationID) return
           const connection =
@@ -92,8 +95,14 @@ export const AnthropicAuthPlugin = Plugin.define({
           )
             return
           event.system.unshift({ type: 'text', text: CLAUDE_CODE_IDENTITY })
-        }),
-      )
+        })
+
+      // Each request kind has its own hook. Anthropic answers OAuth requests
+      // without the identity with HTTP 429, so auxiliary requests need it too.
+      yield* ctx.session.hook('context', addClaudeIdentity)
+      yield* ctx.session.hook('compaction', addClaudeIdentity)
+      yield* ctx.session.hook('generate', addClaudeIdentity)
+      yield* ctx.session.hook('title', addClaudeIdentity)
 
       yield* ctx.session.hook('model.request', (event) =>
         Effect.gen(function* () {

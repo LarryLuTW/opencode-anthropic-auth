@@ -38,14 +38,16 @@ afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
+type Hook<Event> = (event: Event) => Effect.Effect<void> | void
+
+async function runHook<Event>(hook: Hook<Event> | undefined, event: Event) {
+  const result = hook?.(event)
+  if (Effect.isEffect(result)) await Effect.runPromise(result)
+}
+
 function harness(credentialType: 'oauth' | 'key' = 'oauth') {
   let oauth: OAuthRegistration | undefined
-  let contextHook:
-    | ((event: ContextEvent) => Effect.Effect<void> | void)
-    | undefined
-  let modelRequestHook:
-    | ((event: ModelRequestEvent) => Effect.Effect<void> | void)
-    | undefined
+  const hooks = new Map<string, Hook<never>>()
   const hookNames: string[] = []
   const credential =
     credentialType === 'oauth'
@@ -78,17 +80,10 @@ function harness(credentialType: 'oauth' | 'key' = 'oauth') {
       },
     },
     session: {
-      hook: (
-        name: string,
-        hook:
-          | ((event: ContextEvent) => Effect.Effect<void> | void)
-          | ((event: ModelRequestEvent) => Effect.Effect<void> | void),
-      ) =>
+      hook: (name: string, hook: Hook<never>) =>
         Effect.sync(() => {
           hookNames.push(name)
-          if (name === 'context') contextHook = hook as typeof contextHook
-          if (name === 'model.request')
-            modelRequestHook = hook as typeof modelRequestHook
+          hooks.set(name, hook)
           return { dispose: Effect.void }
         }),
     },
@@ -98,8 +93,12 @@ function harness(credentialType: 'oauth' | 'key' = 'oauth') {
     context,
     credential: credential as Credential.OAuth,
     getOAuth: () => oauth,
-    getContextHook: () => contextHook,
-    getModelRequestHook: () => modelRequestHook,
+    getHook: <Event>(name: string) =>
+      hooks.get(name) as Hook<Event> | undefined,
+    getContextHook: () =>
+      hooks.get('context') as Hook<ContextEvent> | undefined,
+    getModelRequestHook: () =>
+      hooks.get('model.request') as Hook<ModelRequestEvent> | undefined,
     getHookNames: () => hookNames,
   }
 }
@@ -177,7 +176,13 @@ describe('AnthropicAuthPlugin', () => {
   test('adds only the Claude identity and OAuth headers', async () => {
     const testHarness = harness()
     await loadPlugin(testHarness.context)
-    expect(testHarness.getHookNames()).toEqual(['context', 'model.request'])
+    expect(testHarness.getHookNames()).toEqual([
+      'context',
+      'compaction',
+      'generate',
+      'title',
+      'model.request',
+    ])
 
     const contextEvent: ContextEvent = {
       model: { providerID: 'anthropic' },
@@ -219,6 +224,42 @@ describe('AnthropicAuthPlugin', () => {
     )
     expect(requestEvent.headers['Anthropic-Beta']).toBeUndefined()
     expect(requestEvent.headers['x-untouched']).toBe('same')
+    const userAgentVersion = requestEvent.headers['user-agent']?.match(
+      /^claude-cli\/(\d+\.\d+\.\d+)/,
+    )?.[1]
+    expect(userAgentVersion).toBeString()
+    expect(Bun.semver.satisfies(userAgentVersion ?? '', '>=2.1.280')).toBeTrue()
+  })
+
+  test.each([
+    'compaction',
+    'generate',
+    'title',
+  ])('adds the Claude identity to %s requests', async (name) => {
+    const testHarness = harness()
+    await loadPlugin(testHarness.context)
+    const event: ContextEvent = {
+      model: { providerID: 'anthropic' },
+      system: [],
+    }
+
+    await runHook(testHarness.getHook<ContextEvent>(name), event)
+    await runHook(testHarness.getHook<ContextEvent>(name), event)
+
+    expect(event.system).toEqual([{ type: 'text', text: CLAUDE_CODE_IDENTITY }])
+  })
+
+  test('does not add the Claude identity to other providers', async () => {
+    const testHarness = harness()
+    await loadPlugin(testHarness.context)
+    const event: ContextEvent = {
+      model: { providerID: 'openai' },
+      system: [{ type: 'text', text: 'unchanged' }],
+    }
+
+    await runHook(testHarness.getHook<ContextEvent>('compaction'), event)
+
+    expect(event.system).toEqual([{ type: 'text', text: 'unchanged' }])
   })
 
   test('does not modify API-key requests', async () => {
@@ -228,8 +269,9 @@ describe('AnthropicAuthPlugin', () => {
       model: { providerID: 'anthropic' },
       system: [{ type: 'text', text: 'unchanged' }],
     }
-    const contextResult = testHarness.getContextHook()?.(contextEvent)
-    if (Effect.isEffect(contextResult)) await Effect.runPromise(contextResult)
+    for (const name of ['context', 'compaction', 'generate', 'title']) {
+      await runHook(testHarness.getHook<ContextEvent>(name), contextEvent)
+    }
     expect(contextEvent.system).toEqual([{ type: 'text', text: 'unchanged' }])
 
     const requestEvent: ModelRequestEvent = {
