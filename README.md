@@ -12,7 +12,7 @@ This release targets OpenCode 2.0.3:
 | Component | Version |
 | --- | --- |
 | OpenCode V2 | `2.0.3` |
-| This plugin | `2.0.3` |
+| This plugin | `2.0.4` |
 | `@opencode/plugin` | `2.0.3` |
 | Effect | `4.0.0-rc.112` |
 
@@ -24,7 +24,7 @@ Pin the full plugin version in `opencode.jsonc`:
 
 ```jsonc
 {
-  "plugins": ["@op1/opencode-anthropic-auth@2.0.3"]
+  "plugins": ["@op1/opencode-anthropic-auth@2.0.4"]
 }
 ```
 

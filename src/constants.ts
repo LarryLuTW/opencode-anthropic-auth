@@ -29,4 +29,4 @@ export const REQUIRED_BETAS = [
 
 export const CLAUDE_CODE_IDENTITY =
   "You are a Claude agent, built on Anthropic's Claude Agent SDK."
-export const USER_AGENT = 'claude-cli/2.1.87 (external, cli)'
+export const USER_AGENT = 'claude-cli/2.1.280 (external, cli)'

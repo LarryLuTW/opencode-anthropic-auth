@@ -1,5 +1,11 @@
 # @op1/opencode-anthropic-auth
 
+## 2.0.4
+
+### Patch Changes
+
+- Report Claude Code `2.1.280` in OAuth request headers to support Claude Opus 5.5.
+
 ## 1.8.1
 
 ### Patch Changes
