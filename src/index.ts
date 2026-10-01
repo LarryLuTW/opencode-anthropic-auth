@@ -66,9 +66,7 @@ export const AnthropicAuthPlugin = Plugin.define({
               }
             }),
           refresh: (credential) =>
-            Effect.promise(() => sharedRefresh(credential.refresh)).pipe(
-              Effect.map(oauthCredential),
-            ),
+            Effect.promise(() => sharedRefresh(credential.refresh)),
         })
       })
 
@@ -156,12 +154,12 @@ function setOAuthHeaders(headers: Record<string, string>, accessToken: string) {
 // A successful result stays reusable briefly for callers that arrive just
 // after it settles; a failure is dropped so the next request can retry.
 const REFRESH_REUSE_MS = 60_000
-const refreshes = new Map<string, Promise<TokenResponse>>()
+const refreshes = new Map<string, Promise<Credential.OAuth>>()
 
 function sharedRefresh(refreshToken: string) {
   const existing = refreshes.get(refreshToken)
   if (existing) return existing
-  const refresh = refreshTokens(refreshToken)
+  const refresh = refreshTokens(refreshToken).then(oauthCredential)
   refreshes.set(refreshToken, refresh)
   refresh.then(
     () => {

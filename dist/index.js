@@ -33,7 +33,7 @@ export const AnthropicAuthPlugin = Plugin.define({
                         }),
                     };
                 }),
-                refresh: (credential) => Effect.promise(() => sharedRefresh(credential.refresh)).pipe(Effect.map(oauthCredential)),
+                refresh: (credential) => Effect.promise(() => sharedRefresh(credential.refresh)),
             });
         });
         const addClaudeIdentity = (event) => Effect.gen(function* () {
@@ -108,7 +108,7 @@ function sharedRefresh(refreshToken) {
     const existing = refreshes.get(refreshToken);
     if (existing)
         return existing;
-    const refresh = refreshTokens(refreshToken);
+    const refresh = refreshTokens(refreshToken).then(oauthCredential);
     refreshes.set(refreshToken, refresh);
     refresh.then(() => {
         setTimeout(() => {

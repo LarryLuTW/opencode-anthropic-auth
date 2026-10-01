@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import type { Credential } from '@opencode/plugin'
 import { Effect, type Scope } from 'effect'
 import { CLAUDE_CODE_IDENTITY } from '../constants.ts'
@@ -208,6 +208,35 @@ describe('AnthropicAuthPlugin', () => {
     const late = await Effect.runPromise(oauth!.refresh(credential))
     expect(late.refresh).toBe('shared-next')
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps the completion-time expiry for a late refresh caller', async () => {
+    let now = 1_700_000_000_000
+    const clock = spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      const testHarness = harness()
+      await loadPlugin(testHarness.context)
+      const oauth = testHarness.getOAuth()!
+      const fetchMock = mock(async () => {
+        now += 2_000
+        return Response.json({
+          access_token: 'late-access',
+          refresh_token: 'late-next',
+          expires_in: 3600,
+        })
+      })
+      globalThis.fetch = fetchMock as unknown as typeof fetch
+      const credential = { ...testHarness.credential, refresh: 'late-refresh' }
+
+      const first = await Effect.runPromise(oauth.refresh(credential))
+      expect(first.expires).toBe(now + 3_600_000)
+      now += 59_000
+      const late = await Effect.runPromise(oauth.refresh(credential))
+      expect(late).toEqual(first)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   test('retries a refresh after a failed attempt', async () => {
