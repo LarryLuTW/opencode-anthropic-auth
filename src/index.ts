@@ -66,7 +66,7 @@ export const AnthropicAuthPlugin = Plugin.define({
               }
             }),
           refresh: (credential) =>
-            Effect.promise(() => refreshTokens(credential.refresh)).pipe(
+            Effect.promise(() => sharedRefresh(credential.refresh)).pipe(
               Effect.map(oauthCredential),
             ),
         })
@@ -148,6 +148,34 @@ function setOAuthHeaders(headers: Record<string, string>, accessToken: string) {
   headers.authorization = `Bearer ${accessToken}`
   headers['anthropic-beta'] = [...betas].join(',')
   headers['user-agent'] = USER_AGENT
+}
+
+// Anthropic refresh tokens are single-use. OpenCode can refresh the same
+// expired credential from several requests at once (for example a new
+// session's reply and its title), so callers share one refresh per token.
+// A successful result stays reusable briefly for callers that arrive just
+// after it settles; a failure is dropped so the next request can retry.
+const REFRESH_REUSE_MS = 60_000
+const refreshes = new Map<string, Promise<TokenResponse>>()
+
+function sharedRefresh(refreshToken: string) {
+  const existing = refreshes.get(refreshToken)
+  if (existing) return existing
+  const refresh = refreshTokens(refreshToken)
+  refreshes.set(refreshToken, refresh)
+  refresh.then(
+    () => {
+      setTimeout(() => {
+        if (refreshes.get(refreshToken) === refresh)
+          refreshes.delete(refreshToken)
+      }, REFRESH_REUSE_MS).unref?.()
+    },
+    () => {
+      if (refreshes.get(refreshToken) === refresh)
+        refreshes.delete(refreshToken)
+    },
+  )
+  return refresh
 }
 
 async function refreshTokens(refreshToken: string) {

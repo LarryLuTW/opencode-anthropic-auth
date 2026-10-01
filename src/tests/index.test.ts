@@ -173,6 +173,66 @@ describe('AnthropicAuthPlugin', () => {
     })
   })
 
+  test('shares one refresh between concurrent callers', async () => {
+    const testHarness = harness()
+    await loadPlugin(testHarness.context)
+    const oauth = testHarness.getOAuth()
+    const responses: Array<(response: Response) => void> = []
+    const fetchMock = mock(
+      () =>
+        new Promise<Response>((resolve) => {
+          responses.push(resolve)
+        }),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const credential = { ...testHarness.credential, refresh: 'shared-refresh' }
+
+    const first = Effect.runPromise(oauth!.refresh(credential))
+    const second = Effect.runPromise(oauth!.refresh(credential))
+    await Bun.sleep(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    responses[0]!(
+      Response.json({
+        access_token: 'shared-access',
+        refresh_token: 'shared-next',
+        expires_in: 3600,
+      }),
+    )
+    const results = await Promise.all([first, second])
+    expect(results.map((result) => result.refresh)).toEqual([
+      'shared-next',
+      'shared-next',
+    ])
+
+    const late = await Effect.runPromise(oauth!.refresh(credential))
+    expect(late.refresh).toBe('shared-next')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('retries a refresh after a failed attempt', async () => {
+    const testHarness = harness()
+    await loadPlugin(testHarness.context)
+    const oauth = testHarness.getOAuth()
+    const fetchMock = mock()
+      .mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          access_token: 'retry-access',
+          refresh_token: 'retry-next',
+          expires_in: 3600,
+        }),
+      )
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const credential = { ...testHarness.credential, refresh: 'retry-refresh' }
+
+    const failed = await Effect.runPromiseExit(oauth!.refresh(credential))
+    expect(failed._tag).toBe('Failure')
+    const retried = await Effect.runPromise(oauth!.refresh(credential))
+    expect(retried.refresh).toBe('retry-next')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   test('adds only the Claude identity and OAuth headers', async () => {
     const testHarness = harness()
     await loadPlugin(testHarness.context)
