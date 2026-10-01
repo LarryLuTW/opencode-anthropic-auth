@@ -15,7 +15,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "compile": "tsc -p tsconfig.build.json",
     "dev": "bun scripts/dev.ts",
     "dev:clean": "bun scripts/dev-clean.ts",
     "extract": "bun scripts/extract-system-prompt.ts",
@@ -24,7 +24,7 @@
     "format": "biome check --write --unsafe",
     "format:check": "biome format .",
     "lint": "biome lint .",
-    "release": "bun test && bun run types && bun run lint && bun run format:check && bun run build && npm publish --access public --tag latest"
+    "release": "bun test && bun run types && bun run lint && bun run format:check && bun run compile && npm publish --access public --tag latest"
   },
   "peerDependencies": {
     "@opencode/plugin": "2.0.3"

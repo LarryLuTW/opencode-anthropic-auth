@@ -52,7 +52,7 @@ bun test
 bun run types
 bun run lint
 bun run format:check
-bun run build
+bun run compile
 ```
 
 For a local build, point `plugins` to the absolute `dist` directory and restart OpenCode.
