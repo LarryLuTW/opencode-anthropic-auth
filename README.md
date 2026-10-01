@@ -36,13 +36,13 @@ For the plugin's OAuth connection, it:
 
 - Adds the Anthropic OAuth authorization, beta, and Claude CLI headers.
 - Removes `x-api-key`.
-- Prepends this system block:
+- Prepends a Claude Code billing block followed by this identity block:
 
 ```text
 You are a Claude agent, built on Anthropic's Claude Agent SDK.
 ```
 
-The existing OpenCode prompt stays unchanged. The plugin does not rewrite messages, tools, URLs, request bodies, or responses.
+The billing block's version and suffix follow the installed Claude Code CLI. If it is not installed, the plugin uses the version in its Claude CLI user agent. The existing OpenCode prompt stays unchanged. It does not rewrite messages, tools, URLs, or responses. API-key requests are not changed.
 
 ## Development
 

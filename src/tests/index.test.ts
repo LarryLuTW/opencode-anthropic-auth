@@ -32,6 +32,11 @@ type ModelRequestEvent = {
   headers: Record<string, string>
 }
 
+type HttpRequestEvent = {
+  model: { providerID: string }
+  request: Request
+}
+
 const originalFetch = globalThis.fetch
 
 afterEach(() => {
@@ -99,6 +104,8 @@ function harness(credentialType: 'oauth' | 'key' = 'oauth') {
       hooks.get('context') as Hook<ContextEvent> | undefined,
     getModelRequestHook: () =>
       hooks.get('model.request') as Hook<ModelRequestEvent> | undefined,
+    getHttpRequestHook: () =>
+      hooks.get('http.request') as Hook<HttpRequestEvent> | undefined,
     getHookNames: () => hookNames,
   }
 }
@@ -262,7 +269,7 @@ describe('AnthropicAuthPlugin', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  test('adds only the Claude identity and OAuth headers', async () => {
+  test('adds the Claude identity, OAuth headers and billing hook', async () => {
     const testHarness = harness()
     await loadPlugin(testHarness.context)
     expect(testHarness.getHookNames()).toEqual([
@@ -271,6 +278,7 @@ describe('AnthropicAuthPlugin', () => {
       'generate',
       'title',
       'model.request',
+      'http.request',
     ])
 
     const contextEvent: ContextEvent = {
@@ -318,6 +326,25 @@ describe('AnthropicAuthPlugin', () => {
     )?.[1]
     expect(userAgentVersion).toBeString()
     expect(Bun.semver.satisfies(userAgentVersion ?? '', '>=2.1.280')).toBeTrue()
+
+    const httpEvent: HttpRequestEvent = {
+      model: { providerID: 'anthropic' },
+      request: new Request('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: JSON.stringify({
+          system: [{ type: 'text', text: CLAUDE_CODE_IDENTITY }],
+          messages: [
+            { role: 'user', content: 'Reply with the single word: ok' },
+          ],
+        }),
+      }),
+    }
+    await runHook(testHarness.getHttpRequestHook(), httpEvent)
+    const sent = (await httpEvent.request.json()) as {
+      system: Array<{ text: string }>
+    }
+    expect(sent.system[0]?.text).toStartWith('x-anthropic-billing-header:')
+    expect(sent.system[1]?.text).toBe(CLAUDE_CODE_IDENTITY)
   })
 
   test.each([
@@ -370,5 +397,16 @@ describe('AnthropicAuthPlugin', () => {
     const requestResult = testHarness.getModelRequestHook()?.(requestEvent)
     if (Effect.isEffect(requestResult)) await Effect.runPromise(requestResult)
     expect(requestEvent.headers).toEqual({ 'x-api-key': 'native-key' })
+
+    const httpEvent: HttpRequestEvent = {
+      model: { providerID: 'anthropic' },
+      request: new Request('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: JSON.stringify({ messages: [{ role: 'user', content: 'ok' }] }),
+      }),
+    }
+    const originalRequest = httpEvent.request
+    await runHook(testHarness.getHttpRequestHook(), httpEvent)
+    expect(httpEvent.request).toBe(originalRequest)
   })
 })

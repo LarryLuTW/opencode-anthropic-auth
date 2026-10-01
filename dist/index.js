@@ -1,5 +1,6 @@
 import { Credential, Integration, Plugin } from '@opencode/plugin/effect';
 import { Effect } from 'effect';
+import { addBillingHeaderToRequest, claudeCodeVersion } from "./attribution.js";
 import { authorize, exchange, startCallbackServer } from "./auth.js";
 import { CLAUDE_CODE_IDENTITY, CLIENT_ID, REQUIRED_BETAS, TOKEN_URL, USER_AGENT, } from "./constants.js";
 const integrationID = 'anthropic';
@@ -69,6 +70,21 @@ export const AnthropicAuthPlugin = Plugin.define({
             if (credential?.type !== 'oauth' || credential.methodID !== methodID)
                 return;
             setOAuthHeaders(event.headers, credential.access);
+        }));
+        yield* ctx.session.hook('http.request', (event) => Effect.gen(function* () {
+            if (event.model.providerID !== integrationID)
+                return;
+            const connection = yield* ctx.integration.connection.active(integrationID);
+            if (!connection)
+                return;
+            const credential = yield* ctx.integration.connection
+                .resolve(connection)
+                .pipe(Effect.orDie);
+            if (credential?.type !== 'oauth' || credential.methodID !== methodID)
+                return;
+            if (new URL(event.request.url).pathname !== '/v1/messages')
+                return;
+            event.request = yield* Effect.promise(() => addBillingHeaderToRequest(event.request, claudeCodeVersion()));
         }));
     }),
 });
